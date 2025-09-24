@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import useApi from "../api/useApi";
-import TeamForm from "../components/TeamForm";
+import TransferForm from "../components/TransferForm";
+import ChatPanel from "../components/ChatPanel";
 
-export default function TeamsPage() {
+export default function TransfersPage() {
   const { get, post, put, del, role } = useApi();
   const [items, setItems] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [managers, setManagers] = useState([]);
-  const [selectedProject, setSelectedProject] = useState("");
+  const [users, setUsers] = useState([]);
   const [page, setPage] = useState(1);
   const [size] = useState(20);
   const [total, setTotal] = useState(0);
@@ -16,52 +15,29 @@ export default function TeamsPage() {
   const [filter, setFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);
-  const [modalProjects, setModalProjects] = useState(null);
-  const [modalManagers, setModalManagers] = useState(null);
 
   const canCreateEdit = role === "ADMIN" || role === "MANAGEMENT";
   const canDelete = role === "ADMIN";
+  const isManager = role === "ADMIN" || role === "MANAGEMENT";
 
-  async function loadProjects() {
-    try {
-      const data = await get(`/projects?page=1&size=100`);
-      const list = Array.isArray(data?.items) ? data.items : [];
-      setProjects(list);
-      if (!selectedProject && list.length > 0) {
-        setSelectedProject(String(list[0].id));
-      }
-      return list;
-    } catch (e) {
-      // no bloquear por error en proyectos, pero mostrar si no hay ninguno
-      console.error(e);
-      return [];
-    }
-  }
-
-  async function loadManagers() {
+  async function loadUsers() {
     try {
       const data = await get(`/users?page=1&size=100`);
       const list = Array.isArray(data?.items) ? data.items : [];
-      // Permitimos ADMIN y MANAGEMENT en selector, pero se validará ≥1 MANAGEMENT
-      const onlyManagers = list.filter((u) => u.role === "MANAGEMENT" || u.role === "ADMIN");
-      setManagers(onlyManagers);
-      return onlyManagers;
+      setUsers(list);
+      return list;
     } catch (e) {
       console.error(e);
-      setManagers([]);
+      setUsers([]);
       return [];
     }
   }
 
-  async function loadTeams() {
+  async function loadTransfers() {
     setLoading(true);
     setError("");
     try {
-      const q = new URLSearchParams();
-      q.set("page", String(page));
-      q.set("size", String(size));
-      if (selectedProject) q.set("project_id", String(selectedProject));
-      const data = await get(`/teams?${q.toString()}`);
+      const data = await get(`/transfers?page=${page}&size=${size}`);
       setItems(Array.isArray(data?.items) ? data.items : []);
       setTotal(typeof data?.total === "number" ? data.total : 0);
     } catch (e) {
@@ -72,31 +48,28 @@ export default function TeamsPage() {
   }
 
   useEffect(() => {
-    loadProjects();
-    loadManagers();
+    if (!isManager) return;
+    loadUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isManager]);
 
   useEffect(() => {
-    loadTeams();
+    if (!isManager) {
+      // no cargar transferencias para USER
+      return;
+    }
+    loadTransfers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, size, role, selectedProject]);
+  }, [page, size, role, isManager]);
 
   const filtered = useMemo(() => {
     if (!filter) return items;
     const f = filter.toLowerCase();
-    return items.filter((t) => String(t.name || "").toLowerCase().includes(f));
+    return items.filter((t) => String(t.position || "").toLowerCase().includes(f));
   }, [items, filter]);
 
   async function openCreate() {
-    // Refrescar listas por si se acaban de crear proyectos/usuarios en otra pestaña
-    const [projList, mgrList] = await Promise.all([loadProjects(), loadManagers()]);
-    setModalProjects(projList);
-    setModalManagers(mgrList);
-    // Autoseleccionar primer proyecto si no hay selección
-    if (!selectedProject && projList.length > 0) {
-      setSelectedProject(String(projList[0].id));
-    }
+    await loadUsers();
     setEditItem(null);
     setShowForm(true);
   }
@@ -108,10 +81,10 @@ export default function TeamsPage() {
 
   async function handleDelete(id) {
     if (!canDelete) return;
-    if (!window.confirm("¿Eliminar este equipo?")) return;
+    if (!window.confirm("¿Eliminar esta transferencia?")) return;
     try {
-      await del(`/teams/${id}`);
-      await loadTeams();
+      await del(`/transfers/${id}`);
+      await loadTransfers();
     } catch (e) {
       alert(e.message || String(e));
     }
@@ -120,35 +93,34 @@ export default function TeamsPage() {
   async function handleSubmit(form) {
     try {
       if (editItem) {
-        await put(`/teams/${editItem.id}`, form);
+        await put(`/transfers/${editItem.id}`, form);
       } else {
-        await post("/teams", form);
+        await post("/transfers", form);
       }
       setShowForm(false);
       setEditItem(null);
-      await loadTeams();
+      await loadTransfers();
     } catch (e) {
       alert(e.message || String(e));
     }
   }
 
+  const findUserLabel = (id) => {
+    const u = users.find((x) => x.id === id);
+    if (!u) return id;
+    return (u.full_name || u.email) + " (" + u.email + ")";
+    };
+
+  if (!isManager) {
+    return <ChatPanel />;
+  }
+
   return (
     <div>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-        <select
-          value={selectedProject}
-          onChange={(e) => { setSelectedProject(e.target.value); setPage(1); }}
-          style={{ padding: 8 }}
-        >
-          <option value="">Todos los proyectos</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-
         <input
           type="text"
-          placeholder="Filtrar por nombre..."
+          placeholder="Filtrar por puesto..."
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           style={{ padding: 8, flex: "0 0 280px" }}
@@ -170,16 +142,12 @@ export default function TeamsPage() {
             onClick={openCreate}
             style={{ background: "#0d6efd", color: "#fff", padding: "8px 12px", border: 0, borderRadius: 4 }}
           >
-            + Crear equipo
+            + Nueva transferencia
           </button>
         )}
       </div>
 
-      {projects.length === 0 && (
-        <p style={{ color: "#555" }}>No hay proyectos creados. Crea un proyecto primero para poder crear equipos.</p>
-      )}
-
-      {loading && <p>Cargando equipos...</p>}
+      {loading && <p>Cargando transferencias...</p>}
       {!loading && error && <p style={{ color: "crimson" }}>Error: {error}</p>}
 
       {!loading && !error && (
@@ -187,9 +155,9 @@ export default function TeamsPage() {
           <thead>
             <tr>
               <th style={th}>ID</th>
-              <th style={th}>Nombre</th>
-              <th style={th}>Proyecto</th>
-              <th style={th}>Activo</th>
+              <th style={th}>Puesto</th>
+              <th style={th}>Persona saliente</th>
+              <th style={th}>Creado</th>
               <th style={th}>Acciones</th>
             </tr>
           </thead>
@@ -197,9 +165,9 @@ export default function TeamsPage() {
             {filtered.map((t) => (
               <tr key={t.id}>
                 <td style={td}>{t.id}</td>
-                <td style={td}>{t.name}</td>
-                <td style={td}>{projects.find((p) => p.id === t.project_id)?.name || t.project_id}</td>
-                <td style={td}>{String(t.is_active)}</td>
+                <td style={td}>{t.position}</td>
+                <td style={td}>{findUserLabel(t.outgoing_user_id)}</td>
+                <td style={td}>{new Date(t.created_at).toLocaleString()}</td>
                 <td style={td}>
                   {canCreateEdit ? (
                     <div style={{ display: "flex", gap: 8 }}>
@@ -228,21 +196,10 @@ export default function TeamsPage() {
       {showForm && (
         <div style={modalOverlay}>
           <div style={modalCard}>
-            <TeamForm
+            <TransferForm
               mode={editItem ? "edit" : "create"}
-              initialData={
-                editItem || {
-                  name: "",
-                  description: "",
-                  project_id:
-                    selectedProject
-                      ? Number(selectedProject)
-                      : ((modalProjects && modalProjects[0]?.id) || (projects[0]?.id) || undefined),
-                  is_active: true,
-                }
-              }
-              projects={modalProjects || projects}
-              managers={modalManagers || managers}
+              initialData={editItem || { position: "", outgoing_user_id: undefined, manager_instructions: "" }}
+              users={users}
               onCancel={() => {
                 setShowForm(false);
                 setEditItem(null);
@@ -274,6 +231,6 @@ const modalCard = {
   borderRadius: 8,
   padding: 16,
   minWidth: 420,
-  maxWidth: 560,
+  maxWidth: 720,
   boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
 };

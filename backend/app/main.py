@@ -30,7 +30,7 @@ app.include_router(api_router)
 @app.on_event("startup")
 def on_startup() -> None:
     # Ensure models are imported before creating tables
-    from app.models import User, Project, Team  # noqa: F401
+    from app.models import User, Project, Team, Transfer  # noqa: F401
     # Create tables (PoC/dev): for production prefer Alembic migrations
     Base.metadata.create_all(bind=engine)
 

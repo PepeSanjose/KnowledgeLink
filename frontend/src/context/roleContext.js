@@ -1,9 +1,14 @@
 import { createContext } from "react";
 
-// Context simple para rol activo en la PoC
+// Contexto de autenticación/rol para la PoC
 const RoleContext = createContext({
-  role: "ADMIN",
+  role: null,
   setRole: () => {},
+  token: null,
+  userEmail: null,
+  isAuthenticated: false,
+  login: async () => {},
+  logout: () => {},
 });
 
 export default RoleContext;

@@ -7,7 +7,7 @@ function buildBaseUrl() {
 }
 
 export default function useApi() {
-  const { role } = useContext(RoleContext);
+  const { role, token } = useContext(RoleContext);
   const baseUrl = useMemo(buildBaseUrl, []);
 
   async function request(path, { method = "GET", body, headers } = {}) {
@@ -16,6 +16,7 @@ export default function useApi() {
       headers: {
         "Content-Type": "application/json",
         "X-Role": role,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...headers,
       },
       body: body ? JSON.stringify(body) : undefined,

@@ -1,12 +1,14 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, insert
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_dep, pagination_params, require_roles
 from app.models.project import Project
 from app.models.team import Team
+from app.models.user import User
+from app.models.associations import team_managers
 from app.schemas.team import TeamCreate, TeamRead, TeamUpdate
 
 router = APIRouter(tags=["teams"])
@@ -52,6 +54,31 @@ def create_team(body: TeamCreate, db: Session = Depends(get_db_dep)) -> TeamRead
     if not proj:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Proyecto no existe")
 
+    # Validar managers_ids (≥1) y existencia/rol
+    ids = list(dict.fromkeys(body.managers_ids or []))  # únicos preservando orden
+    if not ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Debes asignar al menos un manager")
+
+    users = db.execute(
+        select(User).where(User.id.in_(ids), User.is_active == True)  # noqa: E712
+    ).scalars().all()
+    if len(users) != len(ids):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Algún manager no existe o está inactivo")
+
+    # Solo roles MANAGEMENT o ADMIN; y al menos uno MANAGEMENT
+    roles_ok = all(u.role in {"MANAGEMENT", "ADMIN"} for u in users)
+    has_management = any(u.role == "MANAGEMENT" for u in users)
+    if not roles_ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Solo se pueden asignar usuarios con rol MANAGEMENT o ADMIN como managers",
+        )
+    if not has_management:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El equipo debe tener al menos un usuario con rol MANAGEMENT como manager",
+        )
+
     # Unicidad por (project_id, name)
     existing = db.execute(
         select(Team).where(Team.project_id == body.project_id, Team.name == body.name)
@@ -68,6 +95,15 @@ def create_team(body: TeamCreate, db: Session = Depends(get_db_dep)) -> TeamRead
     db.add(team)
     db.commit()
     db.refresh(team)
+
+    # Asignar managers
+    db.execute(
+        insert(team_managers),
+        [{"team_id": team.id, "user_id": u.id} for u in users],
+    )
+    db.commit()
+    db.refresh(team)
+
     return TeamRead.model_validate(team)
 
 

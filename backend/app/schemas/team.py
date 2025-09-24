@@ -12,7 +12,8 @@ class TeamBase(BaseModel):
 
 
 class TeamCreate(TeamBase):
-    pass
+    # IDs de usuarios con rol MANAGEMENT a asignar como managers del equipo en la creación
+    managers_ids: list[int]
 
 
 class TeamUpdate(BaseModel):

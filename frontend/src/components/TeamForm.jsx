@@ -6,12 +6,15 @@ export default function TeamForm({
   onSubmit,
   onCancel,
   projects = [], // [{id, name}]
+  managers = [], // [{id, full_name, email, role}]
 }) {
   const isCreate = mode === "create";
   const [name, setName] = useState(initialData?.name || "");
   const [description, setDescription] = useState(initialData?.description || "");
   const [projectId, setProjectId] = useState(initialData?.project_id || projects[0]?.id || "");
   const [isActive, setIsActive] = useState(initialData?.is_active ?? true);
+  const noProjects = projects.length === 0;
+  const [selectedManagers, setSelectedManagers] = useState([]); // ids (string) seleccionados
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -19,8 +22,9 @@ export default function TeamForm({
     setDescription(initialData?.description || "");
     setProjectId(initialData?.project_id || projects[0]?.id || "");
     setIsActive(initialData?.is_active ?? true);
+    setSelectedManagers([]);
     setError("");
-  }, [initialData, mode, projects]);
+  }, [initialData, mode, projects, managers]);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -34,13 +38,30 @@ export default function TeamForm({
       setError("Debes seleccionar un proyecto.");
       return;
     }
+    if (isCreate && selectedManagers.length === 0) {
+      setError("Debes asignar al menos un manager.");
+      return;
+    }
+    if (isCreate) {
+      const selectedDetails = managers.filter((m) => selectedManagers.includes(String(m.id)));
+      const hasManagement = selectedDetails.some((m) => m.role === "MANAGEMENT");
+      if (!hasManagement) {
+        setError("Debe haber al menos un usuario con rol MANAGEMENT como manager.");
+        return;
+      }
+    }
 
-    onSubmit({
+    const payload = {
       name: name.trim(),
       description: description.trim() || null,
       project_id: Number(projectId),
       is_active: isActive,
-    });
+    };
+    if (isCreate) {
+      payload.managers_ids = selectedManagers.map((v) => Number(v));
+    }
+
+    onSubmit(payload);
   }
 
   return (
@@ -73,6 +94,11 @@ export default function TeamForm({
           ))}
         </select>
       </label>
+      {noProjects && (
+        <small style={{ color: "#b71c1c" }}>
+          No hay proyectos. Ve a la pestaña "Proyectos" y crea uno para poder guardar el equipo.
+        </small>
+      )}
 
       <label style={row}>
         <span style={label}>Descripción</span>
@@ -83,6 +109,30 @@ export default function TeamForm({
           placeholder="Descripción (opcional)"
         />
       </label>
+
+      {isCreate && (
+        <label style={row}>
+          <span style={label}>Manager(es)</span>
+          <select
+            multiple
+            value={selectedManagers}
+            onChange={(e) =>
+              setSelectedManagers(Array.from(e.target.selectedOptions, (o) => o.value))
+            }
+            style={input}
+          >
+            {managers.length === 0 ? (
+              <option value="" disabled>No hay managers disponibles</option>
+            ) : (
+              managers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {(m.full_name || m.email) + " (" + m.email + ")"}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+      )}
 
       {!isCreate && (
         <label style={row}>
@@ -97,7 +147,14 @@ export default function TeamForm({
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
         <button type="button" onClick={onCancel}>Cancelar</button>
-        <button type="submit" style={primary}>Guardar</button>
+        <button
+          type="submit"
+          disabled={noProjects}
+          title={noProjects ? "Crea un proyecto primero" : undefined}
+          style={primary}
+        >
+          Guardar
+        </button>
       </div>
     </form>
   );
