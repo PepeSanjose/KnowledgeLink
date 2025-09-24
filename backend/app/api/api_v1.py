@@ -1,6 +1,5 @@
 from fastapi import APIRouter
 
-from app.api.routes import auth
 # Los siguientes módulos serán añadidos como stubs:
 from app.api.routes import users, projects, teams, positions  # type: ignore[unused-import]
 
@@ -12,7 +11,6 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 # Rutas
-api_router.include_router(auth.router)
 # Se incluirán con prefijos específicos
 try:
     api_router.include_router(users.router, prefix="/users", tags=["users"])       # type: ignore[attr-defined]

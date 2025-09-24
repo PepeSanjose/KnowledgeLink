@@ -48,6 +48,12 @@ class Settings(BaseSettings):
             return [str(x).strip() for x in v]
         return v
 
+    # Admin bootstrap (startup seeding)
+    ADMIN_EMAIL: str | None = None
+    ADMIN_PASSWORD: str | None = None
+    ADMIN_NAME: str = "Administrator"
+    ADMIN_ROLE: str = "ADMIN"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

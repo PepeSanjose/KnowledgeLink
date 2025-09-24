@@ -1,10 +1,9 @@
 from typing import Any, Dict, Tuple
 
-from fastapi import Depends, Query
+from fastapi import Depends, Query, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.core.security import get_current_token_payload, require_roles  # re-export for convenience
 from app.db.session import get_db
 
 
@@ -18,11 +17,36 @@ def get_db_dep(db: Session = Depends(get_db)) -> Session:
     return db
 
 
-async def get_current_user_token(payload: Dict[str, Any] = Depends(get_current_token_payload)) -> Dict[str, Any]:
+# ---- Simple role handling for PoC (header-based) ----
+ALLOWED_ROLES = {"ADMIN", "MANAGEMENT", "USER"}
+
+
+def get_request_role(x_role: str | None = Header(default=None)) -> str:
     """
-    Returns the decoded JWT payload: {"sub": user_id, "role": role, ...}
+    Reads the acting role from the 'X-Role' header.
+    - Allowed: ADMIN, MANAGEMENT, USER (case-insensitive)
     """
-    return payload
+    if not x_role:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing X-Role header")
+    role = x_role.strip().upper()
+    if role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid role")
+    return role
+
+
+def require_roles(*roles: str):
+    """
+    Dependency to enforce roles without JWT (for local PoC).
+    Usage:
+        @router.post(..., dependencies=[Depends(require_roles("ADMIN", "MANAGEMENT"))])
+    """
+    def _dep(role: str = Depends(get_request_role)) -> str:
+        if roles and role not in roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        return role
+    return _dep
+
+
 
 
 def pagination_params(
@@ -36,7 +60,7 @@ def pagination_params(
 __all__ = [
     "get_settings_dep",
     "get_db_dep",
-    "get_current_user_token",
-    "require_roles",
     "pagination_params",
+    "get_request_role",
+    "require_roles",
 ]

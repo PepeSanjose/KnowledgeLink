@@ -1,46 +1,133 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
-from app.api.deps import get_current_user_token, require_roles, pagination_params
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_db_dep, pagination_params, require_roles
+from app.models.project import Project
+from app.models.team import Team
+from app.schemas.team import TeamCreate, TeamRead, TeamUpdate
 
 router = APIRouter(tags=["teams"])
 
 
-@router.get("")
+@router.get("", response_model=dict[str, object])
 def list_teams(
     project_id: Optional[int] = Query(default=None, description="Filtrar por proyecto"),
-    _: tuple[int, int] = Depends(pagination_params),
-    __: dict = Depends(get_current_user_token),
+    page_size: tuple[int, int] = Depends(pagination_params),
+    db: Session = Depends(get_db_dep),
 ):
-    """Stub: listado de equipos (vacío)."""
-    return {"items": [], "total": 0, "project_id": project_id}
+    """Listado de equipos con filtro opcional por proyecto."""
+    page, size = page_size
+
+    base_q = select(Team)
+    count_q = select(func.count()).select_from(Team)
+
+    if project_id is not None:
+        base_q = base_q.where(Team.project_id == project_id)
+        count_q = count_q.where(Team.project_id == project_id)
+
+    total = db.execute(count_q).scalar_one()
+    items = db.execute(base_q.offset((page - 1) * size).limit(size)).scalars().all()
+
+    return {
+        "items": [TeamRead.model_validate(t) for t in items],
+        "total": total,
+        "page": page,
+        "size": size,
+        "project_id": project_id,
+    }
 
 
-@router.post("", dependencies=[Depends(require_roles("ADMIN", "MANAGEMENT"))])
-def create_team(body: dict):
-    """Stub: crear equipo (eco del body)."""
-    return {"id": 1, **body}
+@router.post(
+    "",
+    response_model=TeamRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles("ADMIN", "MANAGEMENT"))],
+)
+def create_team(body: TeamCreate, db: Session = Depends(get_db_dep)) -> TeamRead:
+    # Verificar proyecto existente
+    proj = db.get(Project, body.project_id)
+    if not proj:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Proyecto no existe")
+
+    # Unicidad por (project_id, name)
+    existing = db.execute(
+        select(Team).where(Team.project_id == body.project_id, Team.name == body.name)
+    ).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ya existe un equipo con ese nombre en el proyecto")
+
+    team = Team(
+        name=body.name,
+        description=body.description,
+        project_id=body.project_id,
+        is_active=body.is_active,
+    )
+    db.add(team)
+    db.commit()
+    db.refresh(team)
+    return TeamRead.model_validate(team)
 
 
-@router.put("/{team_id}", dependencies=[Depends(require_roles("ADMIN", "MANAGEMENT"))])
-def update_team(team_id: int, body: dict):
-    """Stub: actualizar equipo."""
-    return {"id": team_id, **body}
+@router.get("/{team_id}", response_model=TeamRead)
+def get_team(team_id: int, db: Session = Depends(get_db_dep)) -> TeamRead:
+    team = db.get(Team, team_id)
+    if not team:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Equipo no encontrado")
+    return TeamRead.model_validate(team)
 
 
-@router.delete("/{team_id}", dependencies=[Depends(require_roles("ADMIN"))])
-def delete_team(team_id: int):
-    """Stub: borrar equipo."""
+@router.put(
+    "/{team_id}",
+    response_model=TeamRead,
+    dependencies=[Depends(require_roles("ADMIN", "MANAGEMENT"))],
+)
+def update_team(team_id: int, body: TeamUpdate, db: Session = Depends(get_db_dep)) -> TeamRead:
+    team = db.get(Team, team_id)
+    if not team:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Equipo no encontrado")
+
+    # Si cambia el project_id, verificar su existencia
+    if body.project_id is not None and body.project_id != team.project_id:
+        proj = db.get(Project, body.project_id)
+        if not proj:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Proyecto no existe")
+        team.project_id = body.project_id
+
+    # Unicidad por (project_id, name) si cambia el nombre o el proyecto
+    new_name = body.name if body.name is not None else team.name
+    new_project_id = body.project_id if body.project_id is not None else team.project_id
+    if new_name != team.name or new_project_id != team.project_id:
+        existing = db.execute(
+            select(Team).where(Team.project_id == new_project_id, Team.name == new_name, Team.id != team.id)
+        ).scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ya existe un equipo con ese nombre en el proyecto")
+        team.name = new_name
+        team.project_id = new_project_id
+
+    if body.description is not None:
+        team.description = body.description
+    if body.is_active is not None:
+        team.is_active = body.is_active
+
+    db.add(team)
+    db.commit()
+    db.refresh(team)
+    return TeamRead.model_validate(team)
+
+
+@router.delete(
+    "/{team_id}",
+    response_model=dict[str, int],
+    dependencies=[Depends(require_roles("ADMIN"))],
+)
+def delete_team(team_id: int, db: Session = Depends(get_db_dep)) -> dict[str, int]:
+    team = db.get(Team, team_id)
+    if not team:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Equipo no encontrado")
+    db.delete(team)
+    db.commit()
     return {"deleted": team_id}
-
-
-@router.post("/{team_id}/users", dependencies=[Depends(require_roles("ADMIN", "MANAGEMENT"))])
-def assign_user_to_team(team_id: int, body: dict):
-    """Stub: asignar usuario a equipo: body = {user_id: int}."""
-    return {"team_id": team_id, "assigned_user": body.get("user_id")}
-
-
-@router.post("/{team_id}/managers", dependencies=[Depends(require_roles("ADMIN", "MANAGEMENT"))])
-def assign_manager_to_team(team_id: int, body: dict):
-    """Stub: asignar manager a equipo: body = {user_id: int}."""
-    return {"team_id": team_id, "assigned_manager": body.get("user_id")}

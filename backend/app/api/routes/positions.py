@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from app.api.deps import get_current_user_token, require_roles, pagination_params
+from app.api.deps import pagination_params, require_roles
 
 router = APIRouter(tags=["positions"])
 
@@ -11,7 +11,6 @@ def list_positions(
     project_id: Optional[int] = Query(default=None, description="Filtrar por proyecto"),
     team_id: Optional[int] = Query(default=None, description="Filtrar por equipo"),
     _: tuple[int, int] = Depends(pagination_params),
-    __: dict = Depends(get_current_user_token),
 ):
     """Stub: listado de puestos (vacío)."""
     return {"items": [], "total": 0, "project_id": project_id, "team_id": team_id}
