@@ -1,6 +1,18 @@
 import { useContext, useState } from "react";
 import RoleContext from "../context/roleContext";
 
+import { Button } from "../components/ui/Button.jsx";
+import { Input } from "../components/ui/Input.jsx";
+import { Label } from "../components/ui/Label.jsx";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "../components/ui/Card.jsx";
+
 export default function LoginPage() {
   const { login } = useContext(RoleContext);
   const [email, setEmail] = useState("admin@example.com");
@@ -22,69 +34,61 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ display: "grid", gap: 16, maxWidth: 380, margin: "64px auto", fontFamily: "system-ui, sans-serif" }}>
-      <h2 style={{ margin: 0 }}>Iniciar sesión</h2>
-      <p style={{ marginTop: -8, color: "#555" }}>
-        Introduce tu email y contraseña. Esta PoC devuelve un rol desde el backend en el token.
-      </p>
+    <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-4">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Iniciar sesión</CardTitle>
+          <CardDescription>
+            Introduce tu email y contraseña. Esta PoC devuelve un rol desde el backend en el token.
+          </CardDescription>
+        </CardHeader>
 
-      {error && (
-        <div style={{ background: "#fdecea", color: "#b71c1c", padding: "8px 12px", border: "1px solid #f5c6cb", borderRadius: 4 }}>
-          {error}
-        </div>
-      )}
+        <CardContent>
+          {error && (
+            <div className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 text-destructive px-3 py-2 text-sm">
+              {error}
+            </div>
+          )}
 
-      <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontSize: 13, color: "#333" }}>Email</span>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            style={styles.input}
-            placeholder="tu@email.com"
-          />
-        </label>
+          <form onSubmit={handleSubmit} className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="tu@email.com"
+                autoComplete="email"
+              />
+            </div>
 
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontSize: 13, color: "#333" }}>Contraseña</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={styles.input}
-            placeholder="••••••••"
-          />
-        </label>
+            <div className="grid gap-2">
+              <Label htmlFor="password">Contraseña</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="••••••••"
+                autoComplete="current-password"
+              />
+            </div>
 
-        <button type="submit" disabled={loading} style={styles.primaryBtn}>
-          {loading ? "Entrando..." : "Entrar"}
-        </button>
-      </form>
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? "Entrando..." : "Entrar"}
+            </Button>
+          </form>
+        </CardContent>
 
-      <small style={{ color: "#666" }}>
-        Consejo: en esta PoC, cualquier combinación válida devolverá un token. El rol se incluye en el token.
-      </small>
+        <CardFooter>
+          <small className="text-muted-foreground">
+            Consejo: en esta PoC, cualquier combinación válida devolverá un token. El rol se incluye en el token.
+          </small>
+        </CardFooter>
+      </Card>
     </div>
   );
 }
-
-const styles = {
-  input: {
-    padding: "8px 10px",
-    border: "1px solid #ccc",
-    borderRadius: 4,
-    outline: "none",
-  },
-  primaryBtn: {
-    padding: "8px 12px",
-    border: "1px solid #0d6efd",
-    background: "#0d6efd",
-    color: "white",
-    borderRadius: 4,
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-};
