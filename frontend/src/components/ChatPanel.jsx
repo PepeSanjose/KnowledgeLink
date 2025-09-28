@@ -1,43 +1,97 @@
 import { useEffect, useRef, useState } from "react";
+import useApi from "../api/useApi";
 
 export default function ChatPanel() {
+  const { post } = useApi();
+
+  const [transferIdInput, setTransferIdInput] = useState("");
+  const [activeTransferId, setActiveTransferId] = useState(null);
+  const [pendingStep, setPendingStep] = useState(null);
+
   const [messages, setMessages] = useState(() => [
     {
       id: "m1",
       role: "assistant",
       content:
-        "Hola, soy tu asistente de transferencias. Cuéntame qué necesitas y te ayudaré con el proceso.",
+        "Hola, soy tu asistente de transferencias. Indica el ID de la transferencia y pulsa Iniciar para comenzar la entrevista.",
       ts: Date.now(),
     },
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
   const endRef = useRef(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  function simulateAssistantReply(text) {
-    const t = text.toLowerCase();
-    if (t.includes("hola") || t.includes("buen")) {
-      return "¡Hola! ¿Quieres iniciar o consultar un traspaso? Puedo registrar información básica y derivarla a un manager.";
+  function threadToMessages(thread = []) {
+    const now = Date.now();
+    return thread.map((t, i) => ({
+      id: `${t.role}-${now}-${i}`,
+      role: t.role,
+      content: t.content,
+      ts: now + i,
+    }));
+  }
+
+  async function handleStart() {
+    const idNum = Number(transferIdInput);
+    if (!idNum || Number.isNaN(idNum) || idNum <= 0) {
+      setError("Introduce un ID de transferencia válido (número).");
+      return;
     }
-    if (t.includes("estado") || t.includes("cómo va") || t.includes("seguimiento")) {
-      return "He registrado tu consulta de estado. Un manager revisará tu caso y te actualizará en breve.";
+    setSending(true);
+    setError("");
+    try {
+      const data = await post(`/chat-transfer/${idNum}/start`, {});
+      const thread = data?.state?.thread || [];
+      const msgs = threadToMessages(thread);
+      const assistant = data?.assistant;
+      const merged =
+        assistant && (!msgs.length || msgs[msgs.length - 1]?.content !== assistant)
+          ? [...msgs, { id: "a-" + Date.now(), role: "assistant", content: assistant, ts: Date.now() }]
+          : msgs.length
+          ? msgs
+          : [
+              {
+                id: "a-" + Date.now(),
+                role: "assistant",
+                content: assistant || "Para empezar, dime 2–5 responsabilidades principales.",
+                ts: Date.now(),
+              },
+            ];
+      setMessages(merged);
+      setActiveTransferId(idNum);
+      setPendingStep(data?.pending_step || null);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setSending(false);
     }
-    if (t.includes("traspaso") || t.includes("transferencia") || t.includes("puesto") || t.includes("saliente")) {
-      return "Entendido. Para iniciar un traspaso, indícame el puesto afectado y cualquier instrucción relevante que debamos trasladar al manager.";
-    }
-    if (t.includes("gracias")) {
-      return "A ti. ¿Puedo ayudarte con algo más relacionado con el traspaso?";
-    }
-    return "He anotado tu mensaje. Un responsable lo revisará y te daremos respuesta. ¿Deseas añadir más detalles?";
   }
 
   async function handleSend() {
     const text = input.trim();
     if (!text) return;
+
+    setError("");
+
+    // Si no hay entrevista iniciada aún, intenta iniciarla automáticamente si hay ID
+    if (!activeTransferId) {
+      await handleStart();
+      if (!activeTransferId && !Number(transferIdInput)) {
+        setError("Indica un ID de transferencia válido y pulsa Iniciar.");
+        return;
+      }
+    }
+    const currentId = activeTransferId || Number(transferIdInput);
+    if (!currentId) {
+      setError("Indica un ID de transferencia válido y pulsa Iniciar.");
+      return;
+    }
+
     setSending(true);
     const userMsg = {
       id: "u-" + Date.now(),
@@ -48,17 +102,28 @@ export default function ChatPanel() {
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
 
-    // Simulación de respuesta (no hay backend de chat todavía)
-    await new Promise((r) => setTimeout(r, 500));
-    const reply = simulateAssistantReply(text);
-    const botMsg = {
-      id: "a-" + Date.now(),
-      role: "assistant",
-      content: reply,
-      ts: Date.now(),
-    };
-    setMessages((prev) => [...prev, botMsg]);
-    setSending(false);
+    try {
+      const data = await post(`/chat-transfer/${currentId}/message`, { message: text });
+      // Sincroniza con el hilo devuelto por el backend para evitar duplicados
+      const thread = data?.state?.thread || [];
+      const synced = threadToMessages(thread);
+      const assistant = data?.assistant;
+      const merged =
+        assistant && (!synced.length || synced[synced.length - 1]?.content !== assistant)
+          ? [...synced, { id: "a-" + Date.now(), role: "assistant", content: assistant, ts: Date.now() }]
+          : synced;
+
+      setMessages(merged);
+      setPendingStep(data?.pending_step || null);
+      setActiveTransferId(currentId);
+    } catch (e) {
+      // En caso de error, revertimos el mensaje del usuario añadido arriba
+      setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
+      setInput(text);
+      setError(e.message || String(e));
+    } finally {
+      setSending(false);
+    }
   }
 
   function handleKeyDown(e) {
@@ -69,26 +134,47 @@ export default function ChatPanel() {
   }
 
   function clearChat() {
-    if (!window.confirm("¿Vaciar conversación?")) return;
+    if (!window.confirm("¿Vaciar conversación local? (No borra el estado guardado en el servidor)")) return;
     setMessages([
       {
         id: "m1",
         role: "assistant",
         content:
-          "Conversación reiniciada. ¿En qué puedo ayudarte con el traspaso?",
+          "Conversación reiniciada. Indica el ID de transferencia y pulsa Iniciar para continuar.",
         ts: Date.now(),
       },
     ]);
+    setError("");
   }
 
   return (
     <div style={wrap}>
       <div style={header}>
         <strong>Chat de Traspasos</strong>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, marginLeft: 12 }}>
+          <input
+            type="number"
+            placeholder="ID transferencia"
+            value={transferIdInput}
+            onChange={(e) => setTransferIdInput(e.target.value)}
+            style={idInput}
+          />
+          <button onClick={handleStart} disabled={sending || !transferIdInput} style={btnPrimary}>
+            {sending && !activeTransferId ? "Iniciando..." : activeTransferId ? "Reiniciar" : "Iniciar"}
+          </button>
+        </div>
+
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          {pendingStep && <span style={{ color: "#555", fontSize: 12 }}>Paso: {pendingStep}</span>}
           <button onClick={clearChat} style={btnSm}>Vaciar</button>
         </div>
       </div>
+
+      {error && (
+        <div style={{ padding: "8px 12px", background: "#fdecea", color: "#b71c1c", border: "1px solid #f5c6cb" }}>
+          {error}
+        </div>
+      )}
 
       <div style={scrollArea}>
         {messages.map((m) => (
@@ -131,11 +217,12 @@ export default function ChatPanel() {
 
 const wrap = {
   display: "grid",
-  gridTemplateRows: "auto 1fr auto",
+  gridTemplateRows: "auto auto 1fr auto",
   height: "calc(100vh - 160px)",
   border: "1px solid #e9ecef",
   borderRadius: 8,
   overflow: "hidden",
+  background: "#fff",
 };
 
 const header = {
@@ -145,6 +232,13 @@ const header = {
   background: "#f8f9fa",
   borderBottom: "1px solid #e9ecef",
   gap: 8,
+};
+
+const idInput = {
+  width: 160,
+  padding: "6px 8px",
+  border: "1px solid #ced4da",
+  borderRadius: 6,
 };
 
 const scrollArea = {
@@ -183,6 +277,15 @@ const btnSm = {
   padding: "6px 8px",
   border: "1px solid #adb5bd",
   background: "#fff",
+  borderRadius: 6,
+  cursor: "pointer",
+};
+
+const btnPrimary = {
+  padding: "6px 10px",
+  border: "1px solid #0d6efd",
+  background: "#0d6efd",
+  color: "#fff",
   borderRadius: 6,
   cursor: "pointer",
 };

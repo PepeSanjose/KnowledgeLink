@@ -11,7 +11,17 @@ backend/.venv/
 *.log
 
 # Databases / misc
+# Ignore local SQLite databases and their journals
+*.db
+*.sqlite
 *.sqlite3
+*.db-shm
+*.db-wal
+*-journal
+
+# Explicitly ignore known DB files
+app.db
+backend/app.db
 
 # Node / Vite (frontend)
 frontend/node_modules/

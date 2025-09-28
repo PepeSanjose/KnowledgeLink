@@ -8,3 +8,8 @@ email-validator
 httpx
 pytest
 pytest-asyncio
+
+# AI & LangGraph
+langgraph
+langchain-core
+langchain-openai
